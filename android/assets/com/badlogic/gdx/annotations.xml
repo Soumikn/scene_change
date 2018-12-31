@@ -1,0 +1,9 @@
+<root>
+    <item name='com.badlogic.gdx.Gdx input'>
+        <annotation name='java.lang.Deprecated' />
+        <annotation name='android.support.annotation.Nullable' />
+    </item>
+    <item name='com.badlogic.gdx.Graphics int getWidth()'>
+        <annotation name='java.lang.Deprecated' />
+    </item>
+</root>
