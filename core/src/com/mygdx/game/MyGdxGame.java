@@ -4,130 +4,180 @@ package com.mygdx.game;
 import com.badlogic.gdx.ApplicationListener;
 import com.badlogic.gdx.Gdx;
 
+import com.badlogic.gdx.Input;
+import com.badlogic.gdx.Screen;
+import com.badlogic.gdx.audio.Music;
+import com.badlogic.gdx.audio.Sound;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.Batch;
 
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 
 import com.badlogic.gdx.graphics.g3d.particles.influencers.ColorInfluencer.Random;
+import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Rectangle;
+import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.scenes.scene2d.Actor;
 
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.InputListener;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.Touchable;
+import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.TimeUtils;
+
+import java.util.Iterator;
 
 
+public class MyGdxGame implements Screen {
+        final Drop game;
 
-public class MyGdxGame implements ApplicationListener {
+        Texture dropImage;
+        Texture bucketImage;
+        Sound dropSound;
+        Music rainMusic;
+        OrthographicCamera camera;
+        Rectangle bucket;
+        Array<Rectangle> raindrops;
+        long lastDropTime;
+        int dropsGathered;
 
-    class Jet extends Actor {
-        private TextureRegion _texture;
+        public MyGdxGame(final Drop game) {
+            this.game = game;
 
-        public Jet(TextureRegion texture){
-            _texture = texture;
-            setBounds(getX(),getY(),_texture.getRegionWidth(), _texture.getRegionHeight());
+            // load the images for the droplet and the bucket, 64x64 pixels each
+            dropImage = new Texture(Gdx.files.internal("droplet.png"));
+            bucketImage = new Texture(Gdx.files.internal("bucket.png"));
 
-            this.addListener(new InputListener(){
-                public boolean touchDown(InputEvent event, float x, float y, int pointer, int buttons){
-                    System.out.println("Touched" + getName());
-                    setVisible(false);
-                    return true;
+            // load the drop sound effect and the rain background "music"
+            dropSound = Gdx.audio.newSound(Gdx.files.internal("drop.wav"));
+            rainMusic = Gdx.audio.newMusic(Gdx.files.internal("rain.mp3"));
+            rainMusic.setLooping(true);
+
+            // create the camera and the SpriteBatch
+            camera = new OrthographicCamera();
+            camera.setToOrtho(false, 800, 480);
+
+            // create a Rectangle to logically represent the bucket
+            bucket = new Rectangle();
+            bucket.x = 800 / 2 - 64 / 2; // center the bucket horizontally
+            bucket.y = 20; // bottom left corner of the bucket is 20 pixels above
+            // the bottom screen edge
+            bucket.width = 64;
+            bucket.height = 64;
+
+            // create the raindrops array and spawn the first raindrop
+            raindrops = new Array<Rectangle>();
+            spawnRaindrop();
+
+        }
+
+        private void spawnRaindrop() {
+            Rectangle raindrop = new Rectangle();
+            raindrop.x = MathUtils.random(0, 800 - 64);
+            raindrop.y = 480;
+            raindrop.width = 64;
+            raindrop.height = 64;
+            raindrops.add(raindrop);
+            lastDropTime = TimeUtils.nanoTime();
+        }
+
+        @Override
+        public void render(float delta) {
+            // clear the screen with a dark blue color. The
+            // arguments to glClearColor are the red, green
+            // blue and alpha component in the range [0,1]
+            // of the color to be used to clear the screen.
+            Gdx.gl.glClearColor(0, 0, 0.2f, 1);
+            Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+
+            // tell the camera to update its matrices.
+            camera.update();
+
+            // tell the SpriteBatch to render in the
+            // coordinate system specified by the camera.
+            game.batch.setProjectionMatrix(camera.combined);
+
+            // begin a new batch and draw the bucket and
+            // all drops
+            game.batch.begin();
+            game.font.draw(game.batch, "Drops Collected: " + dropsGathered, 0, 480);
+            game.batch.draw(bucketImage, bucket.x, bucket.y, bucket.width, bucket.height);
+            for (Rectangle raindrop : raindrops) {
+                game.batch.draw(dropImage, raindrop.x, raindrop.y);
+            }
+            game.batch.end();
+
+            // process user input
+            if (Gdx.input.isTouched()) {
+                Vector3 touchPos = new Vector3();
+                touchPos.set(Gdx.input.getX(), Gdx.input.getY(), 0);
+                camera.unproject(touchPos);
+                bucket.x = touchPos.x - 64 / 2;
+            }
+            if (Gdx.input.isKeyPressed(Input.Keys.LEFT))
+                bucket.x -= 200 * Gdx.graphics.getDeltaTime();
+            if (Gdx.input.isKeyPressed(Input.Keys.RIGHT))
+                bucket.x += 200 * Gdx.graphics.getDeltaTime();
+
+            // make sure the bucket stays within the screen bounds
+            if (bucket.x < 0)
+                bucket.x = 0;
+            if (bucket.x > 800 - 64)
+                bucket.x = 800 - 64;
+
+            // check if we need to create a new raindrop
+            if (TimeUtils.nanoTime() - lastDropTime > 1000000000)
+                spawnRaindrop();
+
+            // move the raindrops, remove any that are beneath the bottom edge of
+            // the screen or that hit the bucket. In the later case we increase the
+            // value our drops counter and add a sound effect.
+            Iterator<Rectangle> iter = raindrops.iterator();
+            while (iter.hasNext()) {
+                Rectangle raindrop = iter.next();
+                raindrop.y -= 200 * Gdx.graphics.getDeltaTime();
+                if (raindrop.y + 64 < 0)
+                    iter.remove();
+                if (raindrop.overlaps(bucket)) {
+                    dropsGathered++;
+                    dropSound.play();
+                    iter.remove();
                 }
-            });
+            }
         }
 
-        // Implement the full form of draw() so we can handle rotation and scaling.
-        public void draw(Batch batch, float alpha){
-            batch.draw(_texture, getX(), getY(), getOriginX(), getOriginY(), getWidth(), getHeight(),
-                    getScaleX(), getScaleY(), getRotation());
+        @Override
+        public void resize(int width, int height) {
         }
 
-        // This hit() instead of checking against a bounding box, checks a bounding circle.
-        public Actor hit(float x, float y, boolean touchable){
-            // If this Actor is hidden or untouchable, it cant be hit
-            if(!this.isVisible() || this.getTouchable() == Touchable.disabled)
-                return null;
-
-            // Get centerpoint of bounding circle, also known as the center of the rect
-            float centerX = getWidth()/2;
-            float centerY = getHeight()/2;
-
-            // Square roots are bad m'kay. In "real" code, simply square both sides for much speedy fastness
-            // This however is the proper, unoptimized and easiest to grok equation for a hit within a circle
-            // You could of course use LibGDX's Circle class instead.
-
-            // Calculate radius of circle
-            float radius = (float) Math.sqrt(centerX * centerX +
-                    centerY * centerY);
-
-            // And distance of point from the center of the circle
-            float distance = (float) Math.sqrt(((centerX - x) * (centerX - x))
-                    + ((centerY - y) * (centerY - y)));
-
-            // If the distance is less than the circle radius, it's a hit
-            if(distance <= radius) return this;
-
-            // Otherwise, it isnt
-            return null;
-        }
-    }
-
-    private Jet[] jets;
-    private Stage stage;
-
-    @Override
-    public void create() {
-        stage = new Stage() ;
-        final TextureRegion jetTexture = new TextureRegion(new Texture("jet.png"));
-
-        jets = new Jet[10];
-
-        // Create/seed our random number for positioning jets randomly
-        Random random = new Random();
-
-        // Create 10 Jet objects at random on screen locations
-        for(int i = 0; i < 10; i++){
-            jets[i] = new Jet(jetTexture);
-
-
-
-//            //Assign the position of the jet to a random value within the screen boundaries
-//            jets[i].setPosition(random.nextInt(Gdx.graphics.getWidth() - (int)jets[i].getWidth())
-//                    , random.nextInt(Gdx.graphics.getHeight() - (int)jets[i].getHeight()));
-
-            // Set the name of the Jet to it's index within the loop
-            jets[i].setName(Integer.toString(i));
-
-            // Add them to the stage
-            stage.addActor(jets[i]);
+        @Override
+        public void show() {
+            // start the playback of the background music
+            // when the screen is shown
+            rainMusic.play();
         }
 
-        Gdx.input.setInputProcessor(stage);
-    }
+        @Override
+        public void hide() {
+        }
 
-    @Override
-    public void dispose() {
-        stage.dispose();
-    }
+        @Override
+        public void pause() {
+        }
 
-    @Override
-    public void render() {
-        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
-        stage.act(Gdx.graphics.getDeltaTime());
-        stage.draw();
-    }
+        @Override
+        public void resume() {
+        }
 
-    @Override
-    public void resize(int width, int height) {
-    }
+        @Override
+        public void dispose() {
+            dropImage.dispose();
+            bucketImage.dispose();
+            dropSound.dispose();
+            rainMusic.dispose();
+        }
 
-    @Override
-    public void pause() {
     }
-
-    @Override
-    public void resume() {
-    }
-}
